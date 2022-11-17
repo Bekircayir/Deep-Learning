@@ -1,43 +1,63 @@
+from network import *
 import matplotlib.pyplot as plt
-from torch.utils.data import DataLoader
-from torch import nn
 import torch
 import numpy as np
-
-# Importiere Klassen
-from dataset import Moons
-from network import NeuralNetwork
-# Größe des Datensatzes
-num_train = 1024
-num_val = 128
+from torchvision.datasets import CIFAR10
+from torchvision import transforms
+import os
 
 # Trainingsparameter
-num_epochs = 250
-learning_rate = 0.1
-batch_size = 128
+num_epochs = 10
+learning_rate = 0.001
+batch_size = 64
 
-# Datensatz laden und Dataloader initialisieren
-train_data = Moons(num_train)
-val_data = Moons(num_val)
-train_dataloader = DataLoader(train_data,batch_size=batch_size,shuffle=True)
-val_dataloader = DataLoader(val_data,batch_size=batch_size,shuffle=True)
+# Tranformationen zur Vorverarbeitung definieren:
+# Mittelwert und Standardabweichung der Trainingsdaten (zur Normalisierung):
+data_mean_and_std = ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
 
-x,y = next(iter(train_dataloader))
+# Aufgabe 2
+# Augmentierung der Daten während des Trainings:
+train_transforms = transforms.Compose([
+transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+transforms.RandomHorizontalFlip(),
+# Konvertierung von Numpy-Array zu Pytorch-Tensor:
+transforms.ToTensor(),
+# Normalisierung:
+transforms.Normalize(*data_mean_and_std)
+])
+# Während Inferenz auf dem Validation-Datensatz nur Normalisierung (keine Augmentierung):
+val_transforms = transforms.Compose([
+# Konvertierung von Numpy-Array zu Pytorch-Tensor:
+transforms.ToTensor(),
+# Normalisierung:
+transforms.Normalize(*data_mean_and_std)
+])
 
-# Trainingsdaten anzeigen
-train_data.plot_redouane()
+# CIFAR10-Datensatz laden. Die oben definierten Transformationen werden automatisch angewendet:
+train_data = CIFAR10("cifar10", train=True, transform=train_transforms, download=True)
+val_data = CIFAR10("cifar10", train=False, transform=val_transforms, download=True)
+
+train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
+val_dataloader = torch.utils.data.DataLoader(val_data, batch_size=batch_size, shuffle=False)
 
 # Neuronales Netz, Loss-Funktion, Optimizer definieren
-model = NeuralNetwork()
-loss_function = ...
-optimizer = ...
+model = SimpleCNN()
+
+loss_function = torch.nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+train_loss = []
+val_loss = []
+val_accuracies = []
+
+os.makedirs("./checkpoints", exist_ok=True)
 
 iteration = 0
 for epoch in range(num_epochs):
     print("epoch %d / %d" % (epoch+1, num_epochs))
 
     # Neuronales Netz in Trainingsmodus versetzen
-    #model.train()
+    model.train()
 
     # Batch-weise über den Trainingsdatensatz iterieren
     for batch_idx, (X, y) in enumerate(train_dataloader):
@@ -51,7 +71,9 @@ for epoch in range(num_epochs):
 
         # Loss berechnen
         loss = loss_function(pred, y)
-        print("Loss:", loss.item())
+
+        train_loss += [(iteration, loss.item())]
+        print("batch %4d / %4d -- loss: %.3f Heir fonkioniert oder? " % (batch_idx+1, len(train_dataloader), loss.item()), end="\r")
 
         # Backward-Pass (Gradienten berechnen)
         loss.backward()
@@ -59,15 +81,34 @@ for epoch in range(num_epochs):
         # Ein Schritt des Gradientenabstiegs mit dem Optimizer
         optimizer.step()
     
+    print("")
+
     # Neuronales Netz in Inferenzmodus versetzen
     model.eval()
 
     # Accuracy auf dem Validationdatensatz berechnen
-    x_test, y_test = next(iter(val_dataloader))
-    pred_test = model(x_test)
-    pred_test = torch.argmax(pred_test, dim=-1)
+    val_accuracies_epoch = []
+    for batch_idx, (X, y) in enumerate(val_dataloader):
+        pred = model(X)
+        pred = torch.argmax(pred, dim=-1)
+        accuracy = torch.mean((pred == y).float()).item()
+        val_accuracies_epoch += [accuracy]
+    val_accuracy = np.mean(val_accuracies_epoch)
+    val_accuracies += [(iteration, val_accuracy)]
+    print("epoch %d --val accuracy: %.2f\n *** " % (epoch+1, val_accuracy * 100))
     
-
+# Trainingsloss und Validation-Accuracy über die Trainingsiterationen plotten
+train_loss = np.array(train_loss)
+val_accuracy = np.array(val_accuracies)
     
+plt.figure()
+ax = plt.subplot(1, 1, 1)
+ax.plot(train_loss[:, 0], train_loss[:, 1])
+ax.set_title("Training Loss")
 
+plt.figure()
+ax = plt.subplot(1, 1, 1)
+ax.plot(val_accuracy[:, 0], val_accuracy[:, 1])
+ax.set_title("Validation Accuracy")
+plt.show()
 
